@@ -311,6 +311,22 @@
       }
     }
 
+    function studentClassRecord(student, classes) {
+      const studentClassId = String(student.class_id || "");
+      const studentClassCode = engine.codeText(student.class_code || "");
+      return (
+        classes.find((row) => String(row.id || "") === studentClassId) ||
+        classes.find((row) => engine.codeText(row.code || "") === studentClassCode) ||
+        classes.find((row) => engine.codeText(row.class_name || "") === studentClassCode) ||
+        null
+      );
+    }
+
+    function studentClassLabel(student, classes) {
+      const klass = studentClassRecord(student, classes);
+      return klass?.class_name || student.class_name || student.class_code || "—";
+    }
+
     async function studentsForView() {
       const [students, classes] = await Promise.all([
         db.all("students"),
@@ -349,7 +365,7 @@
         })
         .filter((row) => {
           if (!query) return true;
-          const klass = classById.get(row.class_id);
+          const klass = studentClassRecord(row, classes) || classById.get(row.class_id);
           return normalizeText(
             [
               row.student_code,
@@ -392,16 +408,16 @@
         pageHead(
           "Học sinh",
           "Quản lý theo năm học, cơ sở và lớp; danh sách được phân trang để dùng tốt với trên 4.500 học sinh.",
-          `<button class="btn" id="studentTemplate">Tải mẫu Excel</button><button class="btn" id="studentImport">Nhập dữ liệu</button><button class="btn primary" id="studentAdd">＋ Học sinh</button>`,
+          `<button class="btn" id="studentTemplate">Tải mẫu Excel</button><button class="btn" id="studentImport">Nhập dữ liệu</button><button class="btn danger" id="studentBulkDeleteScope">Xóa theo bộ lọc</button><button class="btn primary" id="studentAdd">＋ Học sinh</button>`,
         ) +
           `<div class="metric-row"><div class="metric"><strong>${rows.length.toLocaleString("vi-VN")}</strong><span>Học sinh theo bộ lọc</span></div><div class="metric"><strong>${rows.filter((row) => row.organization_status === "nhi_dong").length}</strong><span>Nhi đồng</span></div><div class="metric"><strong>${rows.filter((row) => row.organization_status === "doi_vien").length}</strong><span>Đội viên</span></div><div class="metric"><strong>${rows.filter((row) => row.organization_status === "doan_vien").length}</strong><span>Đoàn viên</span></div><div class="metric"><strong>${rows.filter((row) => String(row.policy_groups || "").trim()).length}</strong><span>Diện chính sách</span></div><div class="metric"><strong>${rows.filter((row) => !["", "none"].includes(row.difficulty_status || "none") || String(row.special_needs || "").trim()).length}</strong><span>Cần theo dõi/hỗ trợ</span></div></div>
           <div class="card mt"><div class="card-body">
           <div class="toolbar"><input class="grow" id="studentSearch" value="${esc(state.studentQuery)}" placeholder="Tìm mã, tên, lớp, chính sách hoặc ghi chú…"><select id="studentClassFilter"><option value="all">Tất cả lớp</option>${availableClasses.map((row) => `<option value="${row.id}" ${state.studentClassFilter === row.id ? "selected" : ""}>${esc(row.class_name)}</option>`).join("")}</select><select id="studentStatusFilter"><option value="all">Tất cả trạng thái học</option><option value="active" ${state.studentStatusFilter === "active" ? "selected" : ""}>Đang học</option><option value="inactive" ${state.studentStatusFilter === "inactive" ? "selected" : ""}>Ngừng học</option><option value="transferred" ${state.studentStatusFilter === "transferred" ? "selected" : ""}>Chuyển trường</option><option value="graduated" ${state.studentStatusFilter === "graduated" ? "selected" : ""}>Hoàn thành cấp học</option></select><select id="studentOrganizationFilter"><option value="all">Mọi tình trạng Đội</option>${[["nhi_dong","Nhi đồng"],["du_bi","Dự bị đội viên"],["doi_vien","Đội viên"],["doan_vien","Đoàn viên"],["chua_xac_dinh","Chưa xác định"]].map(([value,label]) => `<option value="${value}" ${state.studentOrganizationFilter === value ? "selected" : ""}>${label}</option>`).join("")}</select><select id="studentSupportFilter"><option value="all">Mọi diện theo dõi</option><option value="policy" ${state.studentSupportFilter === "policy" ? "selected" : ""}>Diện chính sách</option><option value="difficulty" ${state.studentSupportFilter === "difficulty" ? "selected" : ""}>Có hoàn cảnh khó khăn</option><option value="special" ${state.studentSupportFilter === "special" ? "selected" : ""}>Có đặc điểm cần lưu ý</option></select><select id="studentPageSize"><option value="25" ${state.studentPageSize === 25 ? "selected" : ""}>25 dòng</option><option value="50" ${state.studentPageSize === 50 ? "selected" : ""}>50 dòng</option><option value="100" ${state.studentPageSize === 100 ? "selected" : ""}>100 dòng</option></select><button class="btn small" id="studentCsv">CSV</button><button class="btn small" id="studentXlsx">Excel</button><button class="btn small" id="studentWord">Word</button></div>
-          ${selected.size ? `<div class="bulkbar"><strong>${selected.size} học sinh đã chọn</strong><button class="btn small" id="studentBulkTransfer">Chuyển lớp</button><button class="btn small" id="studentBulkInactive">Ngừng học</button><button class="btn small" id="studentBulkRestore">Khôi phục</button><button class="btn small" id="studentClearSelection">Bỏ chọn</button></div>` : ""}
+          ${selected.size ? `<div class="bulkbar"><strong>${selected.size} học sinh đã chọn</strong><button class="btn small" id="studentBulkTransfer">Chuyển lớp</button><button class="btn small" id="studentBulkInactive">Ngừng học</button><button class="btn small" id="studentBulkRestore">Khôi phục</button><button class="btn small danger" id="studentBulkDeleteSelected">Xóa đã chọn</button><button class="btn small" id="studentClearSelection">Bỏ chọn</button></div>` : ""}
           <div class="table-wrap" style="max-height:520px"><table><thead><tr><th><input type="checkbox" id="studentSelectPage" aria-label="Chọn trang hiện tại"></th><th>STT</th><th>Mã học sinh</th><th>Họ và tên</th><th>Lớp</th><th>Tình trạng Đội</th><th>Chính sách/hỗ trợ</th><th>Trạng thái học</th><th>Thao tác</th></tr></thead><tbody>${model.rows
             .map(
               (row, index) =>
-                `<tr><td><input type="checkbox" data-student-select="${row.id}" ${selected.has(row.id) ? "checked" : ""} aria-label="Chọn ${esc(row.full_name)}"></td><td>${(model.page - 1) * state.studentPageSize + index + 1}</td><td><code>${esc(row.student_code)}</code></td><td class="wrap"><strong>${esc(row.full_name)}</strong><br><small>${fmtDate(row.birth_date)}</small></td><td>${esc(row.class_code || "—")}<br><small>${esc(campusName(row.campus_id))}</small></td><td><span class="badge blue">${esc(organizationLabel(row.organization_status))}</span></td><td class="wrap">${row.policy_groups ? `<span class="badge yellow">Chính sách</span> ${esc(row.policy_groups)}` : ""}${!["", "none"].includes(row.difficulty_status || "none") ? `<br><span class="badge red">${esc(difficultyLabel(row.difficulty_status))}</span>` : ""}${row.special_needs ? `<br><small>${esc(row.special_needs)}</small>` : ""}${!row.policy_groups && ["", "none"].includes(row.difficulty_status || "none") && !row.special_needs ? "—" : ""}</td><td>${row.status === "inactive" ? '<span class="badge">Ngừng học</span>' : row.status === "transferred" ? '<span class="badge yellow">Chuyển trường</span>' : row.status === "graduated" ? '<span class="badge blue">Hoàn thành</span>' : '<span class="badge green">Đang học</span>'}</td><td><button class="link-btn" data-student-view="${row.id}">Xem</button><button class="link-btn" data-student-edit="${row.id}">Sửa</button><button class="link-btn danger" data-student-delete="${row.id}">Xóa/Ngừng</button></td></tr>`,
+                `<tr><td><input type="checkbox" data-student-select="${row.id}" ${selected.has(row.id) ? "checked" : ""} aria-label="Chọn ${esc(row.full_name)}"></td><td>${(model.page - 1) * state.studentPageSize + index + 1}</td><td><code>${esc(row.student_code)}</code></td><td class="wrap"><strong>${esc(row.full_name)}</strong><br><small>${fmtDate(row.birth_date)}</small></td><td>${esc(studentClassLabel(row, classes))}<br><small>${esc(campusName(row.campus_id))}</small></td><td><span class="badge blue">${esc(organizationLabel(row.organization_status))}</span></td><td class="wrap">${row.policy_groups ? `<span class="badge yellow">Chính sách</span> ${esc(row.policy_groups)}` : ""}${!["", "none"].includes(row.difficulty_status || "none") ? `<br><span class="badge red">${esc(difficultyLabel(row.difficulty_status))}</span>` : ""}${row.special_needs ? `<br><small>${esc(row.special_needs)}</small>` : ""}${!row.policy_groups && ["", "none"].includes(row.difficulty_status || "none") && !row.special_needs ? "—" : ""}</td><td>${row.status === "inactive" ? '<span class="badge">Ngừng học</span>' : row.status === "transferred" ? '<span class="badge yellow">Chuyển trường</span>' : row.status === "graduated" ? '<span class="badge blue">Hoàn thành</span>' : '<span class="badge green">Đang học</span>'}</td><td><button class="link-btn" data-student-view="${row.id}">Xem</button><button class="link-btn" data-student-edit="${row.id}">Sửa</button><button class="link-btn danger" data-student-delete="${row.id}">Xóa/Ngừng</button></td></tr>`,
             )
             .join("") || '<tr><td colspan="9" class="empty">Chưa có học sinh theo bộ lọc.</td></tr>'}</tbody></table></div>${paginationHtml("student", model)}</div></div>`,
       );
@@ -479,6 +495,8 @@
         state.importSession = null;
         go("imports");
       };
+      $("#studentBulkDeleteScope").onclick = () =>
+        openBulkDeleteStudents("scope", rows);
       const columns = [
         { name: "student_code", label: "Mã học sinh" },
         { name: "full_name", label: "Họ và tên" },
@@ -515,6 +533,9 @@
         $("#studentBulkInactive").onclick = () => bulkStudentStatus("inactive");
       if ($("#studentBulkRestore"))
         $("#studentBulkRestore").onclick = () => bulkStudentStatus("active");
+      if ($("#studentBulkDeleteSelected"))
+        $("#studentBulkDeleteSelected").onclick = () =>
+          openBulkDeleteStudents("selected");
     }
 
     async function openStudentForm(id = null) {
@@ -671,13 +692,170 @@
       renderStudents();
     }
 
+    async function openBulkDeleteStudents(mode, scopedRows = null) {
+      const allStudents = await db.all("students"),
+        rows =
+          mode === "selected"
+            ? allStudents.filter((row) => state.studentSelected.has(row.id))
+            : Array.isArray(scopedRows)
+              ? scopedRows
+              : await studentsForView();
+      if (!rows.length)
+        return toast(
+          mode === "selected"
+            ? "Chưa chọn học sinh để xóa."
+            : "Không có học sinh trong phạm vi bộ lọc hiện tại.",
+          "bad",
+        );
+
+      const ids = new Set(rows.map((row) => row.id)),
+        codes = new Set(rows.map((row) => engine.codeText(row.student_code))),
+        unresolved = (await db.all("sync_conflicts")).filter(
+          (row) =>
+            row.status === "unresolved" &&
+            row.entity_type === "students" &&
+            ids.has(row.entity_id),
+        );
+      if (unresolved.length)
+        return toast(
+          `Có ${unresolved.length} học sinh đang xung đột đồng bộ. Hãy xử lý xung đột trước khi xóa hàng loạt.`,
+          "bad",
+        );
+
+      const dependencyStores = [
+          ["student_incidents", "vi phạm"],
+          ["program_results", "kết quả rèn luyện/phong trào"],
+          ["team_members", "thành viên tổ chức Đội"],
+          ["commendations", "khen thưởng"],
+        ],
+        dependencyCounts = [];
+      for (const [store, label] of dependencyStores) {
+        const count = (await db.all(store)).filter(
+          (row) =>
+            ids.has(row.student_id) ||
+            (row.student_code && codes.has(engine.codeText(row.student_code))),
+        ).length;
+        if (count) dependencyCounts.push(`${count} ${label}`);
+      }
+      const documentCount = (await db.all("document_links")).filter(
+        (row) =>
+          row.related_module === "students" && ids.has(row.related_record_id),
+      ).length;
+      if (documentCount)
+        dependencyCounts.push(`${documentCount} liên kết hồ sơ/minh chứng`);
+
+      const yearName = currentYear()?.name || "năm học đang chọn",
+        campusNameText =
+          state.campusId === "all"
+            ? "tất cả cơ sở"
+            : currentCampus()?.name || "cơ sở đang chọn",
+        scopeText =
+          mode === "selected"
+            ? `${rows.length.toLocaleString("vi-VN")} học sinh đã chọn`
+            : `${rows.length.toLocaleString("vi-VN")} học sinh theo bộ lọc hiện tại • ${yearName} • ${campusNameText}`;
+      openModal(
+        "Xóa học sinh hàng loạt",
+        `<div class="notice danger"><strong>Sắp xóa ${scopeText}.</strong><br>Học sinh sẽ được đánh dấu xóa và đồng bộ sang các thiết bị khác. Lớp, GVCN, thi đua, báo cáo và dữ liệu liên quan không bị xóa.</div>${dependencyCounts.length ? `<div class="notice warn"><strong>Dữ liệu lịch sử được giữ nguyên:</strong> ${esc(dependencyCounts.join("; "))}. Khi nhập lại đúng mã học sinh, ứng dụng sẽ tự liên kết lịch sử với hồ sơ mới.</div>` : '<div class="notice">Không phát hiện dữ liệu nghiệp vụ liên quan trong phạm vi đã chọn.</div>'}<div class="notice mt">Ứng dụng sẽ tạo điểm khôi phục được bảo vệ và tải một tệp sao lưu danh sách học sinh trước khi xóa.</div><label class="check-row"><input type="checkbox" id="studentBulkDeleteAcknowledge"> Tôi đã kiểm tra đúng năm học, cơ sở, lớp và bộ lọc.</label><div class="field mt"><label>Nhập chính xác: <strong>XÓA HỌC SINH</strong></label><input id="studentBulkDeleteConfirm" autocomplete="off" placeholder="XÓA HỌC SINH"></div><div id="studentBulkDeleteProgress" class="muted mt" role="status"></div>`,
+        `<button class="btn" id="cancelStudentBulkDelete">Hủy</button><button class="btn danger" id="confirmStudentBulkDelete">Tạo sao lưu và xóa ${rows.length.toLocaleString("vi-VN")} học sinh</button>`,
+        true,
+      );
+      $("#cancelStudentBulkDelete").onclick = closeModal;
+      $("#confirmStudentBulkDelete").onclick = async () => {
+        const phrase = $("#studentBulkDeleteConfirm").value.trim();
+        if (!$("#studentBulkDeleteAcknowledge").checked)
+          return toast("Cần xác nhận đã kiểm tra đúng phạm vi xóa.", "bad");
+        if (phrase !== "XÓA HỌC SINH")
+          return toast("Câu xác nhận chưa chính xác.", "bad");
+
+        const button = $("#confirmStudentBulkDelete"),
+          cancel = $("#cancelStudentBulkDelete"),
+          progress = $("#studentBulkDeleteProgress"),
+          deletedAt = now();
+        button.disabled = true;
+        cancel.disabled = true;
+        progress.textContent = "Đang tạo điểm khôi phục và tệp sao lưu…";
+        try {
+          await createInternalSnapshot(
+            `Trước xóa ${rows.length} học sinh • ${yearName} • ${campusNameText}`,
+            {
+              tier: "protected",
+              protectedSnapshot: true,
+              reason: "before-bulk-student-delete",
+              yearId: state.yearId,
+            },
+          );
+          download(
+            JSON.stringify(
+              {
+                format: "TPT-STUDENT-BACKUP-1",
+                app_id: APP.appId,
+                school_profile_id: APP.schoolProfileId,
+                school_year_id: state.yearId,
+                campus_id: state.campusId,
+                exported_at: deletedAt,
+                record_count: rows.length,
+                students: rows,
+              },
+              null,
+              2,
+            ),
+            `sao-luu-hoc-sinh-truoc-khi-xoa-${today()}.json`,
+            "application/json;charset=utf-8",
+          );
+          progress.textContent = `Đang đánh dấu xóa ${rows.length.toLocaleString("vi-VN")} học sinh và tạo lệnh đồng bộ…`;
+          await db.bulkPut(
+            "students",
+            rows.map((row) => ({
+              ...row,
+              deleted_at: deletedAt,
+              deleted_reason: "Xóa học sinh hàng loạt để nhập lại danh sách",
+              deleted_scope: {
+                school_year_id: state.yearId,
+                campus_id: state.campusId,
+                mode,
+              },
+            })),
+          );
+          await db.put(
+            "audit_logs",
+            {
+              action: "bulk_delete",
+              entity: "students",
+              summary: `Xóa hàng loạt ${rows.length} học sinh; giữ nguyên dữ liệu lịch sử liên quan`,
+              reason: "Nhập lại danh sách học sinh",
+              school_year_id: state.yearId,
+              campus_id: state.campusId,
+            },
+            { audit: false },
+          );
+          state.studentSelected.clear();
+          closeModal();
+          await loadContext();
+          toast(
+            `Đã xóa ${rows.length.toLocaleString("vi-VN")} học sinh. Lớp, GVCN và dữ liệu lịch sử được giữ nguyên. Có thể nhập lại Excel ngay.`,
+          );
+          renderStudents();
+        } catch (error) {
+          button.disabled = false;
+          cancel.disabled = false;
+          progress.textContent = "";
+          toast(
+            "Không thể xóa hàng loạt; giao dịch chưa hoàn tất. " +
+              error.message,
+            "bad",
+          );
+        }
+      };
+    }
+
     async function viewStudent(id) {
-      const [student, incidents, commendations, programs, links] = await Promise.all([
+      const [student, incidents, commendations, programs, links, classes] = await Promise.all([
         db.get("students", id),
         db.all("student_incidents"),
         db.all("commendations"),
         db.all("program_results"),
         db.all("document_links"),
+        db.all("classes"),
       ]);
       if (!student) return;
       const relatedIncidents = incidents.filter(
@@ -699,7 +877,7 @@
       ).length;
       openModal(
         "Chi tiết học sinh",
-        `<div class="grid-2"><div class="card"><div class="card-body"><div class="split"><span>Mã học sinh</span><code>${esc(student.student_code)}</code></div><div class="split mt"><span>Họ và tên</span><strong>${esc(student.full_name)}</strong></div><div class="split mt"><span>Ngày sinh</span><span>${fmtDate(student.birth_date)}</span></div><div class="split mt"><span>Lớp</span><span>${esc(student.class_code || student.class_name || "—")}</span></div><div class="split mt"><span>Cơ sở</span><span>${esc(campusName(student.campus_id))}</span></div><div class="split mt"><span>Tình trạng Đội</span><strong>${esc(organizationLabel(student.organization_status))}</strong></div><div class="split mt"><span>Ngày kết nạp/công nhận</span><span>${fmtDate(student.organization_joined_date)}</span></div></div></div><div class="card"><div class="card-body"><div class="metric-row" style="grid-template-columns:1fr 1fr"><div class="metric"><strong>${relatedIncidents.length}</strong><span>Vi phạm/ghi nhận</span></div><div class="metric"><strong>${relatedAwards.length}</strong><span>Khen thưởng</span></div></div><div class="split mt"><span>Diện chính sách</span><strong>${esc(student.policy_groups || "Không ghi nhận")}</strong></div><div class="split mt"><span>Khó khăn</span><strong>${esc(difficultyLabel(student.difficulty_status))}</strong></div><div class="split mt"><span>Người liên hệ</span><span>${esc([student.guardian_name, student.guardian_phone].filter(Boolean).join(" • ") || "—")}</span></div></div></div></div><div class="card mt"><div class="card-head"><h2>Hỗ trợ và lưu ý</h2></div><div class="card-body"><p><strong>Đặc điểm cần lưu ý:</strong> ${esc(student.special_needs || "Chưa ghi nhận")}</p><p><strong>Nội dung hỗ trợ:</strong> ${esc(student.support_notes || "Chưa ghi nhận")}</p><p><strong>Ghi chú:</strong> ${esc(student.notes || "—")}</p></div></div><div class="card mt"><div class="card-head"><h2>Lịch sử vi phạm gần nhất</h2></div><div class="card-body">${relatedIncidents.length ? relatedIncidents.slice(-10).reverse().map((row) => `<div class="split"><span>${fmtDate(row.date)} • ${esc(row.incident_type)}</span><span>${esc(row.status || "draft")}</span></div>`).join("") : '<div class="empty">Chưa có vi phạm.</div>'}</div></div>`,
+        `<div class="grid-2"><div class="card"><div class="card-body"><div class="split"><span>Mã học sinh</span><code>${esc(student.student_code)}</code></div><div class="split mt"><span>Họ và tên</span><strong>${esc(student.full_name)}</strong></div><div class="split mt"><span>Ngày sinh</span><span>${fmtDate(student.birth_date)}</span></div><div class="split mt"><span>Lớp</span><span>${esc(studentClassLabel(student, classes))}</span></div><div class="split mt"><span>Cơ sở</span><span>${esc(campusName(student.campus_id))}</span></div><div class="split mt"><span>Tình trạng Đội</span><strong>${esc(organizationLabel(student.organization_status))}</strong></div><div class="split mt"><span>Ngày kết nạp/công nhận</span><span>${fmtDate(student.organization_joined_date)}</span></div></div></div><div class="card"><div class="card-body"><div class="metric-row" style="grid-template-columns:1fr 1fr"><div class="metric"><strong>${relatedIncidents.length}</strong><span>Vi phạm/ghi nhận</span></div><div class="metric"><strong>${relatedAwards.length}</strong><span>Khen thưởng</span></div></div><div class="split mt"><span>Diện chính sách</span><strong>${esc(student.policy_groups || "Không ghi nhận")}</strong></div><div class="split mt"><span>Khó khăn</span><strong>${esc(difficultyLabel(student.difficulty_status))}</strong></div><div class="split mt"><span>Người liên hệ</span><span>${esc([student.guardian_name, student.guardian_phone].filter(Boolean).join(" • ") || "—")}</span></div></div></div></div><div class="card mt"><div class="card-head"><h2>Hỗ trợ và lưu ý</h2></div><div class="card-body"><p><strong>Đặc điểm cần lưu ý:</strong> ${esc(student.special_needs || "Chưa ghi nhận")}</p><p><strong>Nội dung hỗ trợ:</strong> ${esc(student.support_notes || "Chưa ghi nhận")}</p><p><strong>Ghi chú:</strong> ${esc(student.notes || "—")}</p></div></div><div class="card mt"><div class="card-head"><h2>Lịch sử vi phạm gần nhất</h2></div><div class="card-body">${relatedIncidents.length ? relatedIncidents.slice(-10).reverse().map((row) => `<div class="split"><span>${fmtDate(row.date)} • ${esc(row.incident_type)}</span><span>${esc(row.status || "draft")}</span></div>`).join("") : '<div class="empty">Chưa có vi phạm.</div>'}</div></div>`,
         `<button class="btn" id="studentViewClose">Đóng</button><button class="btn primary" id="studentViewIncident">＋ Ghi nhận vi phạm</button>`,
         true,
       );
@@ -1007,7 +1185,7 @@
             })),
           );
         closeModal();
-        toast("Đã lưu ghi nhận; bảng thi đua không bị thay đổi.");
+        toast("Đã lưu ghi nhận; vi phạm đã liên kết để tính và xuất thi đua.");
         if (state.page === "incidents") renderIncidents();
       };
     }
