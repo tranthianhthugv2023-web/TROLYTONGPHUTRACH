@@ -3935,8 +3935,11 @@
             return fileId ? this.retry(upload) : upload();
           }
           async uploadJson(name, value, options = {}) {
-            const text = JSON.stringify(value),
-              checksum = await sha256Text(stableJSON(value));
+            // Serialize and checksum the exact same canonical JSON bytes.
+            // This prevents false checksum failures after JSON.parse/stringify
+            // normalizes undefined values, dates, or object-key order.
+            const text = stableJSON(value),
+              checksum = await sha256Text(text);
             return {
               file: await this.multipartUpload(
                 name,
@@ -8625,21 +8628,71 @@
           }[type];
           let body = "";
           if (type === "week")
-            body = `<h3>I. Kết quả thực hiện</h3><p>Đã hoàn thành <strong>${d.completed.length}</strong>/${d.tasks.length} công việc; còn <strong>${d.overdue.length}</strong> việc quá hạn.</p>${simpleTable(
-              ["Công việc", "Trạng thái", "Hạn"],
+            body = `<h3>I. Kết quả thực hiện công việc</h3><p>Đã hoàn thành <strong>${d.completed.length}</strong>/${d.tasks.length} công việc; còn <strong>${d.overdue.length}</strong> việc quá hạn.</p>${simpleTable(
+              [
+                "Công việc",
+                "Kế hoạch/Nhóm",
+                "Bắt đầu",
+                "Hạn",
+                "Trạng thái",
+                "Tiến độ",
+                "Trở ngại",
+                "Kết quả thực hiện",
+                "Minh chứng",
+                "Ghi chú điều chỉnh",
+              ],
               d.tasks.map((x) => [
                 x.title,
-                statusLabel(x.status),
+                [
+                  d.plans.find((plan) => plan.id === x.plan_id)?.name,
+                  x.group,
+                ]
+                  .filter(Boolean)
+                  .join(" • ") || "—",
+                fmtDate(x.start_date),
                 fmtDate(x.due_date),
+                statusLabel(x.status),
+                `${Number(x.progress || 0)}%`,
+                x.obstacle || "—",
+                x.result || "—",
+                x.evidence || "—",
+                x.notes || "—",
               ]),
-            )}<h3>II. Hoạt động và lịch sắp tới</h3>${simpleTable(
-              ["Hoạt động", "Thời gian", "Địa điểm"],
+            )}<h3>II. Hoạt động Đội</h3>${simpleTable(
+              [
+                "Hoạt động",
+                "Nhóm/Chủ điểm",
+                "Ngày",
+                "Địa điểm",
+                "Phụ trách",
+                "Đối tượng/quy mô",
+                "Mục tiêu/Nội dung",
+                "Phương án an toàn",
+                "Phương án dự phòng",
+                "Kết quả sau hoạt động",
+                "Trạng thái",
+              ],
+              d.activities.map((x) => [
+                x.name,
+                [x.category, x.theme].filter(Boolean).join(" • ") || "—",
+                fmtDate(x.date),
+                x.location || "—",
+                x.leader || "—",
+                x.participants || "—",
+                x.objectives || "—",
+                x.safety || "—",
+                x.backup_plan || "—",
+                x.result || "—",
+                statusLabel(x.status),
+              ]),
+            )}<h3>III. Lịch sắp tới</h3>${simpleTable(
+              ["Sự kiện", "Thời gian", "Địa điểm"],
               d.upcoming.map((x) => [
                 x.title,
                 fmtDate(x.date),
                 x.location || "Chưa cập nhật",
               ]),
-            )}<h3>III. Kế hoạch tuần sau</h3><p class="muted">Phần nhận xét/kế hoạch có thể bổ sung khi in; hệ thống không tự tạo số liệu ngoài dữ liệu nguồn.</p>`;
+            )}<h3>IV. Kế hoạch tuần sau</h3><p class="muted">Báo cáo lấy nguyên nội dung đã nhập từ công việc và hoạt động; hệ thống không tự rút gọn mô tả, kết quả, minh chứng hoặc ghi chú.</p>`;
           if (["scores", "scores_month", "scores_semester", "scores_year", "ranking"].includes(type)) {
             const rankingScope =
                 {
@@ -8682,20 +8735,30 @@
               [
                 "Công việc",
                 "Kế hoạch",
+                "Nhóm",
+                "Bắt đầu",
                 "Hạn",
                 "Trạng thái",
                 "Tiến độ",
-                "Kết quả",
+                "Ngày hoàn thành",
+                "Trở ngại",
+                "Kết quả thực hiện",
                 "Minh chứng",
+                "Ghi chú điều chỉnh",
               ],
               d.tasks.map((x) => [
                 x.title,
                 d.plans.find((plan) => plan.id === x.plan_id)?.name || "—",
+                x.group || "—",
+                fmtDate(x.start_date),
                 fmtDate(x.due_date),
                 statusLabel(x.status),
                 (x.progress || 0) + "%",
+                fmtDate(x.completion_date),
+                x.obstacle || "—",
                 x.result || "—",
                 x.evidence || "—",
+                x.notes || "—",
               ]),
             );
           if (type === "workplan")
@@ -8704,48 +8767,90 @@
                 "Mã",
                 "Kế hoạch",
                 "Thời gian",
+                "Mục tiêu",
+                "Chỉ tiêu",
+                "Căn cứ",
+                "Phối hợp/Nguồn lực",
+                "Rủi ro và phương án",
                 "Trạng thái",
                 "Tiến độ",
                 "Kết quả",
                 "Minh chứng",
+                "Ghi chú điều chỉnh",
               ],
               d.plans.map((x) => [
                 x.code || "—",
                 x.name,
                 `${fmtDate(x.start_date)} – ${fmtDate(x.end_date)}`,
+                x.objectives || "—",
+                x.targets || "—",
+                x.basis || "—",
+                [x.coordination, x.resources].filter(Boolean).join(" • ") || "—",
+                x.risks || "—",
                 statusLabel(x.status),
                 `${Number(x.progress || 0)}%`,
                 x.result || "—",
                 x.evidence || "—",
+                x.notes || "—",
               ]),
             )}<h3>II. Công việc thực hiện</h3>${simpleTable(
               [
                 "Công việc",
                 "Thuộc kế hoạch",
+                "Nhóm",
+                "Bắt đầu",
                 "Hạn",
                 "Trạng thái",
                 "Tiến độ",
+                "Ngày hoàn thành",
+                "Trở ngại",
                 "Kết quả",
                 "Minh chứng",
+                "Ghi chú điều chỉnh",
               ],
               d.tasks.map((x) => [
                 x.title,
                 d.plans.find((plan) => plan.id === x.plan_id)?.name || "—",
+                x.group || "—",
+                fmtDate(x.start_date),
                 fmtDate(x.due_date),
                 statusLabel(x.status),
                 `${Number(x.progress || 0)}%`,
+                fmtDate(x.completion_date),
+                x.obstacle || "—",
                 x.result || "—",
                 x.evidence || "—",
+                x.notes || "—",
               ]),
             )}`;
           if (type === "activities")
             body = simpleTable(
-              ["Hoạt động", "Nhóm", "Ngày", "Địa điểm", "Trạng thái"],
+              [
+                "Hoạt động",
+                "Nhóm",
+                "Chủ điểm",
+                "Ngày",
+                "Địa điểm",
+                "Phụ trách",
+                "Đối tượng/quy mô",
+                "Mục tiêu/Nội dung",
+                "Phương án an toàn",
+                "Phương án dự phòng",
+                "Kết quả sau hoạt động",
+                "Trạng thái",
+              ],
               d.activities.map((x) => [
                 x.name,
                 x.category,
+                x.theme || "—",
                 fmtDate(x.date),
-                x.location,
+                x.location || "—",
+                x.leader || "—",
+                x.participants || "—",
+                x.objectives || "—",
+                x.safety || "—",
+                x.backup_plan || "—",
+                x.result || "—",
                 statusLabel(x.status),
               ]),
             );
@@ -8761,20 +8866,34 @@
                 "Kế hoạch",
                 "Bắt đầu",
                 "Kết thúc",
+                "Mục tiêu",
+                "Chỉ tiêu",
+                "Căn cứ",
+                "Phối hợp",
+                "Nguồn lực",
+                "Rủi ro và phương án",
                 "Trạng thái",
                 "Tiến độ",
                 "Kết quả",
                 "Minh chứng",
+                "Ghi chú điều chỉnh",
               ],
               d.plans.map((x) => [
                 x.code,
                 x.name,
                 x.start_date,
                 x.end_date,
+                x.objectives || "—",
+                x.targets || "—",
+                x.basis || "—",
+                x.coordination || "—",
+                x.resources || "—",
+                x.risks || "—",
                 statusLabel(x.status),
                 `${Number(x.progress || 0)}%`,
                 x.result || "—",
                 x.evidence || "—",
+                x.notes || "—",
               ]),
             );
           if (type === "students")
@@ -8911,19 +9030,105 @@
               ["total", "Điểm trung bình"],
               ["raw_total", "Tổng điểm"],
             ];
+          } else if (type === "week") {
+            const planNames = new Map(
+              d.plans.map((plan) => [plan.id, plan.name]),
+            );
+            rows = [
+              ...d.tasks.map((task) => ({
+                record_type: "Công việc",
+                name: task.title,
+                category_or_plan:
+                  [planNames.get(task.plan_id), task.group]
+                    .filter(Boolean)
+                    .join(" • ") || "",
+                theme: "",
+                start_date: task.start_date || "",
+                due_date: task.due_date || "",
+                location: "",
+                leader: "",
+                participants: "",
+                status: statusLabel(task.status),
+                progress: Number(task.progress || 0),
+                objectives: "",
+                safety: "",
+                backup_plan: "",
+                obstacle: task.obstacle || "",
+                completion_date: task.completion_date || "",
+                result: task.result || "",
+                evidence: task.evidence || "",
+                notes: task.notes || "",
+              })),
+              ...d.activities.map((activity) => ({
+                record_type: "Hoạt động",
+                name: activity.name,
+                category_or_plan: activity.category || "",
+                theme: activity.theme || "",
+                start_date: activity.date || "",
+                due_date: "",
+                location: activity.location || "",
+                leader: activity.leader || "",
+                participants: activity.participants || "",
+                status: statusLabel(activity.status),
+                progress: "",
+                objectives: activity.objectives || "",
+                safety: activity.safety || "",
+                backup_plan: activity.backup_plan || "",
+                obstacle: "",
+                completion_date: "",
+                result: activity.result || "",
+                evidence: "",
+                notes: "",
+              })),
+            ];
+            columns = [
+              ["record_type", "Loại bản ghi"],
+              ["name", "Công việc/Hoạt động"],
+              ["category_or_plan", "Kế hoạch/Nhóm"],
+              ["theme", "Chủ điểm"],
+              ["start_date", "Bắt đầu/Ngày tổ chức"],
+              ["due_date", "Hạn"],
+              ["location", "Địa điểm"],
+              ["leader", "Người phụ trách"],
+              ["participants", "Đối tượng/quy mô"],
+              ["status", "Trạng thái"],
+              ["progress", "Tiến độ (%)"],
+              ["objectives", "Mục tiêu/Nội dung"],
+              ["safety", "Phương án an toàn"],
+              ["backup_plan", "Phương án dự phòng"],
+              ["obstacle", "Trở ngại"],
+              ["completion_date", "Ngày hoàn thành"],
+              ["result", "Kết quả thực hiện"],
+              ["evidence", "Minh chứng"],
+              ["notes", "Ghi chú điều chỉnh"],
+            ];
           } else if (type === "activities") {
             rows = d.activities.map((row) => ({
               name: row.name,
               category: row.category,
+              theme: row.theme || "",
               date: row.date,
               location: row.location,
+              leader: row.leader || "",
+              participants: row.participants || "",
+              objectives: row.objectives || "",
+              safety: row.safety || "",
+              backup_plan: row.backup_plan || "",
+              result: row.result || "",
               status: statusLabel(row.status),
             }));
             columns = [
               ["name", "Hoạt động"],
               ["category", "Nhóm"],
+              ["theme", "Chủ điểm"],
               ["date", "Ngày"],
               ["location", "Địa điểm"],
+              ["leader", "Người phụ trách"],
+              ["participants", "Đối tượng/quy mô"],
+              ["objectives", "Mục tiêu/Nội dung"],
+              ["safety", "Phương án an toàn"],
+              ["backup_plan", "Phương án dự phòng"],
+              ["result", "Kết quả sau hoạt động"],
               ["status", "Trạng thái"],
             ];
           } else if (type === "incidents") {
@@ -8953,6 +9158,14 @@
                 due_date: plan.end_date,
                 status: statusLabel(plan.status),
                 progress: Number(plan.progress || 0),
+                objectives: plan.objectives || "",
+                targets: plan.targets || "",
+                basis: plan.basis || "",
+                coordination: plan.coordination || "",
+                resources: plan.resources || "",
+                risks: plan.risks || "",
+                obstacle: "",
+                completion_date: "",
                 result: plan.result || "",
                 evidence: plan.evidence || "",
                 notes: plan.notes || "",
@@ -8966,6 +9179,14 @@
                 due_date: task.due_date,
                 status: statusLabel(task.status),
                 progress: Number(task.progress || 0),
+                objectives: "",
+                targets: "",
+                basis: "",
+                coordination: "",
+                resources: "",
+                risks: "",
+                obstacle: task.obstacle || "",
+                completion_date: task.completion_date || "",
                 result: task.result || "",
                 evidence: task.evidence || "",
                 notes: task.notes || "",
@@ -8980,6 +9201,14 @@
               ["due_date", "Kết thúc/Hạn"],
               ["status", "Trạng thái"],
               ["progress", "Tiến độ (%)"],
+              ["objectives", "Mục tiêu"],
+              ["targets", "Chỉ tiêu"],
+              ["basis", "Căn cứ"],
+              ["coordination", "Đơn vị phối hợp"],
+              ["resources", "Nguồn lực"],
+              ["risks", "Rủi ro và phương án"],
+              ["obstacle", "Trở ngại"],
+              ["completion_date", "Ngày hoàn thành"],
               ["result", "Kết quả"],
               ["evidence", "Minh chứng"],
               ["notes", "Ghi chú"],
@@ -9027,6 +9256,12 @@
               ["level", "Cấp"],
               ["start_date", "Bắt đầu"],
               ["end_date", "Kết thúc"],
+              ["objectives", "Mục tiêu"],
+              ["targets", "Chỉ tiêu"],
+              ["basis", "Căn cứ/văn bản liên quan"],
+              ["coordination", "Đơn vị phối hợp"],
+              ["resources", "Nguồn lực"],
+              ["risks", "Rủi ro và phương án"],
               ["status", "Trạng thái"],
               ["progress", "Tiến độ (%)"],
               ["result", "Kết quả"],
@@ -9072,9 +9307,12 @@
               plan: d.plans.find((plan) => plan.id === row.plan_id)?.name || "",
               group: row.group,
               campus: campusName(row.campus_id),
+              start_date: row.start_date,
               due_date: row.due_date,
               status: statusLabel(row.status),
               progress: row.progress,
+              completion_date: row.completion_date || "",
+              obstacle: row.obstacle || "",
               result: row.result || "",
               evidence: row.evidence || "",
               notes: row.notes || "",
@@ -9084,9 +9322,12 @@
               ["plan", "Thuộc kế hoạch"],
               ["group", "Nhóm"],
               ["campus", "Cơ sở"],
+              ["start_date", "Bắt đầu"],
               ["due_date", "Hạn"],
               ["status", "Trạng thái"],
               ["progress", "Tiến độ"],
+              ["completion_date", "Ngày hoàn thành"],
+              ["obstacle", "Trở ngại"],
               ["result", "Kết quả"],
               ["evidence", "Minh chứng"],
               ["notes", "Ghi chú"],
@@ -12979,16 +13220,31 @@
           } catch (_) {}
         }
 
-        const stableJSON = (value) => {
+        const canonicalJSONValue = (value, inArray = false) => {
+          if (value === undefined) return inArray ? null : undefined;
+          if (value === null) return null;
+          if (value instanceof Date) return value.toISOString();
+          if (typeof Blob !== "undefined" && value instanceof Blob)
+            return undefined;
+          if (
+            typeof FileSystemHandle !== "undefined" &&
+            value instanceof FileSystemHandle
+          )
+            return undefined;
           if (Array.isArray(value))
-            return `[${value.map(stableJSON).join(",")}]`;
-          if (value && typeof value === "object" && !(value instanceof Blob))
-            return `{${Object.keys(value)
-              .sort()
-              .map((key) => `${JSON.stringify(key)}:${stableJSON(value[key])}`)
-              .join(",")}}`;
-          return JSON.stringify(value);
+            return value.map((item) => canonicalJSONValue(item, true));
+          if (typeof value === "object") {
+            const result = {};
+            for (const key of Object.keys(value).sort()) {
+              const normalized = canonicalJSONValue(value[key], false);
+              if (normalized !== undefined) result[key] = normalized;
+            }
+            return result;
+          }
+          return value;
         };
+        const stableJSON = (value) =>
+          JSON.stringify(canonicalJSONValue(value));
         async function sha256Text(text) {
           const hash = await crypto.subtle.digest(
             "SHA-256",

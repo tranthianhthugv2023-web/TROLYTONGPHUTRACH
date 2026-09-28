@@ -3,7 +3,7 @@
 // Bump this when the deployed app shell changes. app-config.js is always
 // refreshed from the network so a teacher can replace the public config
 // without being trapped by an older Service Worker cache.
-const CACHE_NAME = "tpt-doi-v4-0-0-stable-20260901";
+const CACHE_NAME = "tpt-doi-v4-0-3-bulk-delete-detailed-reports-20260928";
 const APP_SHELL = [
   "./",
   "./index.html",
